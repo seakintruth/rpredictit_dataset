@@ -3,7 +3,8 @@
 .Rapp.history
 
 # Session Data files
-.RData
+# Let's include the workspace for easy load and use later
+#.RData
 
 # User-specific files
 .Ruserdata
