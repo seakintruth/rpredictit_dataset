@@ -53,10 +53,22 @@ if (is.null(scriptFileName())){
     projectDirectory <- dirname(scriptFileName())
 }
 
+#load our data set if not present
+if (!exists("closed.results")) {
+    projectDirectory %>%
+        file.path("03_readMarketDataFromDb.R") %>%
+        source(echo=TRUE)
+}
+
 # Start wrangling!
+# update our timestamp to be a date/time value
+closed.results$timeStamp <- lubridate::as_datetime(closed.results$timeStamp)
 
-# Let's add
+# Markets with a single contract are yes/no questions
+# (Yes = .99 and no= 0.01 price)
 
-
+glimpse(closed.results)
+summary(closed.results)
+# update our
 # unload large packages
 pacman::p_unload(tidyverse)

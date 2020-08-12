@@ -275,6 +275,7 @@ gg_miss_upset(closed.results)
 #Note: NA vs !NA
 #Note: variable names extended with suffix _NA
 
+# Correct missing values in the lastClosedPrice column
 closed_results_shadow <- bind_shadow(closed.results)
 glimpse(closed.results)
 glimpse(closed_results_shadow)
@@ -283,22 +284,28 @@ closed.results.verify.price <- closed.results %>%
   mutate(price.difference = (lastTradePrice - lastClosePrice)) %>%
   filter(!(price.difference == 0))
 
+# this shows that for the 30'ish occurances  when there is a difference
+# between lastTradePrice and lastClosePrice the lastTradePrice is shifted
+# to the max/min
 
-closed.results.verify.price
-dplyr::summarize(closed.results.verify.price)
+closed.results.verify.price %>%
+  select(lastTradePrice,lastClosePrice,price.difference)
 
+# So we find that there are occurances were last trade price is not lastClosePrice
+summary (closed.results)
 
-
+# Assuming that the lastClosePrice is a more valid
 closed.results.missingLastClosedPrice <- closed_results_shadow %>%
   mutate(lastClosePriceMissing = is.na(lastClosePrice)) %>%
   filter(lastClosePriceMissing)
 
 
 
-
 glimpse(closed.results.missingLastClosedPrice)
 closed_results_nab <- nabular(closed.results)
 glimpse(closed.results)
+
+
 
 #verify they are identical
 all.equal(closed_results_shadow, closed_results_nab)
