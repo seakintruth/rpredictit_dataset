@@ -15,8 +15,10 @@ pacman::p_load(
 if(length(extrafont::fonts()) == 0){
   extrafont::font_import(prompt = FALSE)
 }
-# if is windows:
-loadfonts(device="win")
+
+if(interactive()){loadfonts(device="pdf")} else {loadfonts(device="win")}
+
+#{loadfonts(device="pdf")} else {loadfonts(device="win")}
 
 #--------------------------------------------------------------------------
 #                           Get project directory
