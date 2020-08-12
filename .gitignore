@@ -3,8 +3,8 @@
 .Rapp.history
 
 # Session Data files
-# Let's include the workspace for easy load and use later
-#.RData
+# Let's include the workspace for easy load and use later? ... nope!
+.RData
 
 # User-specific files
 .Ruserdata
@@ -35,3 +35,4 @@ vignettes/*.pdf
 # Temporary files created by R markdown
 *.utf8.md
 *.knit.md
+.Rproj.user
