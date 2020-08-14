@@ -52,12 +52,6 @@ if (is.null(scriptFileName())){
   projectDirectory <- dirname(scriptFileName())
 }
 
-#load our data set if not present
-if (!exists("closed.results")) {
-  projectDirectory %>%
-    file.path("03_readMarketDataFromDb.R") %>%
-    source(echo=TRUE)
-}
 if (!exists("closed.results.clean")) {
   projectDirectory %>%
     file.path("04_wrangel_data.R") %>%
