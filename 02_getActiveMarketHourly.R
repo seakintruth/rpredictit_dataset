@@ -186,7 +186,7 @@ delayDurringSiteMaintanence <- function(http.response, check.url){
     repeat{
         if (!is.null(trading.suspended) ){
             message("API Warning: Trying again in a minute. ",trading.suspended)
-            # we just made a call so wait a minute
+            # we just made a call so wait our delay period
             queryTimeBegin <- Sys.time()
             http.response <- httr::GET(check.url)
             # handle a site maintenance message:
@@ -248,6 +248,7 @@ requestMarketopenValue <- function(openMarkets,db){
             this.market <- rpredictit::single_market(openMarkets[market.id])
             this.market[["querySource"]] <- rep(1,length(unlist(this.market[1])))
             message("attempting to query id:",openMarkets[market.id])
+
             # [TODO] Query here to make new marketId in table market, if row doesn't exist yet
             market.observations <- this.market[
                 c(
@@ -286,7 +287,7 @@ requestMarketopenValue <- function(openMarkets,db){
             )
         }
         query.time.end <- Sys.time()
-        # we just made a call so wait a minute
+        # we just made a call so wait our delay period
         sleepLessProcessTime(query.time.end, queryTimeBegin)
     }
 }
@@ -375,7 +376,7 @@ getChartDataValue <- function(openMarkets,db){
         appendChartData(db,openMarkets[market.id],"30d")
         appendChartData(db,openMarkets[market.id],"90d")
         query.time.end <- Sys.time()
-        # we just made a call so wait a minute
+        # we just made a call so wait our delay period
         sleepLessProcessTime(query.time.end, queryTimeBegin)
     }
 }
