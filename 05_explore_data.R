@@ -1,7 +1,7 @@
 # Ensure we can use package management
 if(!require(pacman)){install.packages(pacman)}
 # Load all of this script's packages
-pacman::p_load(tidyverse,ggplot)
+pacman::p_load(tidyverse,ggplot,corrplot,olsrr)
 
 scriptFileName <- function() {
   # http://stackoverflow.com/a/32016824/2292993
@@ -100,7 +100,7 @@ closed.results.clean <- closed.results.clean %>%
   dplyr::full_join(closed.market.count.contracts, by="market_id")
 
 #  glimpse(closed.results.clean)
- closed.results.clean
+glimpse(closed.results.clean)
 
 # filter for the trump tweet contracts
 trump.tweet.markets <- closed.results.clean %>%
@@ -175,19 +175,60 @@ NumberOfExtraWeeks <- (datasetDaysByWeek - datasetDaysByDate)/7
 
 # There appears to be a major divergance in values 1/3rd of the way through 2019
 # So let's treat these as two different processes
+dtNewProcess <- lubridate::mdy("3/15/2019")
 trump.tweet.markets.yes.section1 <- trump.tweet.markets.yes %>%
-  filter(lastMarketClosedDate < lubridate::mdy("3/1/2019"))
-
+  filter(lastMarketClosedDate < dtNewProcess)
 trump.tweet.markets.yes.section2 <- trump.tweet.markets.yes %>%
-  filter(lastMarketClosedDate >= lubridate::mdy("3/1/2019"))
+  filter(lastMarketClosedDate >= dtNewProcess)
+hist(trump.tweet.markets.yes$contract_lowerBinValue)
+hist(trump.tweet.markets.yes.section1$contract_lowerBinValue)
+hist(trump.tweet.markets.yes.section2$contract_lowerBinValue)
+#plot all points
+#plot(trump.tweet.markets$lastMarketClosedDate,trump.tweet.markets$contract_lowerBinValue)
+#plot(trump.tweet.markets.no$lastMarketClosedDate,trump.tweet.markets.no$contract_lowerBinValue)
 
 plot(trump.tweet.markets.yes.section1$lastMarketClosedDate,trump.tweet.markets.yes.section1$contract_lowerBinValue)
 plot(trump.tweet.markets.yes.section2$lastMarketClosedDate,trump.tweet.markets.yes.section2$contract_lowerBinValue)
 
-plot(trump.tweet.markets$lastMarketClosedDate,trump.tweet.markets$contract_lowerBinValue)
-plot(trump.tweet.markets.no$lastMarketClosedDate,trump.tweet.markets.no$contract_lowerBinValue)
+summary(trump.tweet.markets.yes)
+skimr::skim(trump.tweet.markets.yes)
 
-#[TODO] attempted to perform these filters as a single filter with anded regex, failed...
-summary(trump.tweet.markets)
+#look as some linear regression models
+#plot(lm(contract_lowerBinValue ~ lastMarketClosedDate , data = trump.tweet.markets.yes))
+#plot(lm(contract_lowerBinValue ~ lastMarketClosedDate , data = trump.tweet.markets.yes.section1))
+#plot(lm(contract_lowerBinValue ~ lastMarketClosedDate , data = trump.tweet.markets.yes.section2))
 
-trump.tweet.markets
+# Model Selection:
+# All Tweets
+displaySimpleModelStats <- function(tweetDataToDescribe,strTitle) {
+  par(mfrow=c(1, 1))  # divides graph area in 1 columns
+  scatter.smooth(
+    x=tweetDataToDescribe$lastMarketClosedDate,
+    y=tweetDataToDescribe$contract_lowerBinValue,
+    main = paste0(strTitle,"Closed Date ~ Tweets")
+  )
+  par(mfrow=c(1, 2))  # divides graph area in 2 columns
+  boxplot(
+    tweetDataToDescribe$contract_lowerBinValue,
+    main=paste0(strTitle,"Tweets"),
+    sub=paste("Number of outlier rows: ",
+        length(boxplot.stats(trump.tweet.markets.yes$contract_lowerBinValue)$out)
+      )
+    )  # box plot for speed
+  boxplot(tweetDataToDescribe$lastMarketClosedDate, main=paste0(strTitle,"Date"), sub=paste("Number of outlier rows: ",length(boxplot.stats(trump.tweet.markets.yes$contract_lowerBinValue)$out)))  # box plot for speed
+  cor(as.numeric(tweetDataToDescribe$lastMarketClosedDate), tweetDataToDescribe$contract_lowerBinValue)  #correlation between variables
+  #simple linear regression model with one independent variable
+  simpleModel <- lm(contract_lowerBinValue ~ lastMarketClosedDate , data = tweetDataToDescribe)
+  print(simpleModel)
+  summary(simpleModel)
+  par(mfrow=c(1, 1))  # divides graph area back to one
+  plot(simpleModel$effects)
+  plot(simpleModel$residuals)
+}
+displaySimpleModelStats(trump.tweet.markets.yes, "All: ")
+displaySimpleModelStats(trump.tweet.markets.yes.section1,paste0("<",dtNewProcess, ": "))
+displaySimpleModelStats(trump.tweet.markets.yes.section2,paste0(">",dtNewProcess, ": "))
+
+par(mfrow=c(1, 1))  # divides graph area back to one
+
+

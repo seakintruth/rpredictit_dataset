@@ -58,6 +58,7 @@ if (!exists("closed.results")) {
         file.path("03_readMarketDataFromDb.R") %>%
         source(echo=TRUE)
 }
+
 # timestamp is the date/time the data was pulled...
 closed.results.original <- closed.results
 # Start wrangling!
