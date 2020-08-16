@@ -2,62 +2,58 @@
 if(!require(pacman)){install.packages(pacman)}
 # Load all of this script's packages
 pacman::p_load(tidyverse,ggplot,corrplot,olsrr)
-
+pacman::p_load(magrittr)
+# Function scriptFileName() attempts to find the current scripts path to use relative path
+# Checks to see if script is source'd via:
+# command line, R console, RStudio,RStudio Console,RStudio Run Selection
+# returns '' if we are unable to find
+# http://stackoverflow.com/a/35842176/2292993
+# build and view db with https://sqlitebrowser.org/
 scriptFileName <- function() {
-  # http://stackoverflow.com/a/32016824/2292993
-  cmdArgs = commandArgs(trailingOnly = FALSE)
-  needle = "--file="
-  match = grep(needle, cmdArgs)
-  if (length(match) > 0) {
-    # Rscript via command line
-    return(normalizePath(sub(needle, "", cmdArgs[match])))
-  } else {
-    ls_vars = ls(sys.frames()[[1]])
-    if ("fileName" %in% ls_vars) {
-      # Source'd via RStudio
-      return(normalizePath(sys.frames()[[1]]$fileName))
-    } else {
-      if (!is.null(sys.frames()[[1]]$ofile)) {
-        # Source'd via R console
-        return(normalizePath(sys.frames()[[1]]$ofile))
+  tryCatch({
+    cmdArgs <- commandArgs(trailingOnly = FALSE)
+    matchFound = "--file=" %>% grep(cmdArgs)
+    if (matchFound %>% length() > 0) {
+      "--file=" %>% sub("", cmdArgs[matchFound]) %>% normalizePath() %% return()
+    } else if ("fileName" %in% (sys.frames()[[1]] %>% ls())){
+      sys.frames()[[1]]$fileName %>% normalizePath() %>% return()
+    } else if (sys.frames()[[1]]$ofile %>% is.null()){
+      if (pacman::p_exists(rstudioapi)){
+        pth = rstudioapi::getActiveDocumentContext()$path
+        if (pth == '') {
+          rstudioapi::getSourceEditorContext()$path %>%
+            normalizePath() %>% return()
+        } else {pth %>% normalizePath() %>% return()}
       } else {
-        # RStudio Run Selection
-        # http://stackoverflow.com/a/35842176/2292993
-        if ("rstudioapi" %in% installed.packages()){
-          pth = rstudioapi::getActiveDocumentContext()$path
-          if (pth!='') {
-            return(normalizePath(pth))
-          } else {
-            # RStudio Console
-            tryCatch({
-              pth = rstudioapi::getSourceEditorContext()$path
-              pth = normalizePath(pth)
-            }, error = function(e) {
-              # normalizePath('') issues warning/error
-              pth = ''
-            }
-            )
-            return(pth)
-          }
-        }
+        message("WARNING:Unable to find script path automatically select this script.")
+        file.choose() %>% return()
       }
+    } else {
+      sys.frames()[[1]]$ofile %>% normalizePath() %>% return()
     }
-  }
+  }, error = function(e) {
+    message("WARNING:Unable to find script path automatically select this script.")
+    file.choose() %>% return()
+  })
 }
-if (is.null(scriptFileName())){
-  message("WARNING:Unable to find script path automatically")
-  # projectDirectory <- file.path("/media","jeremy","250GbUsb","data","r","predictit")
-  projectDirectory <- file.path("P:","data","r","predictit")
-} else {
-  projectDirectory <- dirname(scriptFileName())
-}
+projectDirectory <- dirname(scriptFileName())
 
 if (!exists("closed.results.clean")) {
   projectDirectory %>%
-    file.path("04_wrangel_data.R") %>%
+    file.path("04_wrangle_data.R") %>%
     source(echo=TRUE)
 }
 
+scatter.smooth(
+  x=closed.results.clean$lastClosedDate,
+  y=closed.results.clean$Count_of_Contracts.x,
+  main = paste0("Count of Contracts ~ Last Trade Price")
+)
+
+str(closed.results.clean$lastClosedDate)
+
+
+hist(closed.results.clean$Count_of_Contracts.x,)
 str(closed.results.clean)
 glimpse(closed.results.clean)
 summary(closed.results.clean)
@@ -128,6 +124,7 @@ trump.tweet.markets <- closed.results.clean %>%
   mutate(contract_shortName = stringr::str_replace(contract_shortName,"\\+", ".1")) %>%
   mutate(contract_lowerBinValue = as.numeric(contract_shortName))
 
+view(trump.tweet.markets)
 
 trump.tweet.markets.tmp <- trump.tweet.markets %>%
   filter(!is.na(lastClosedDate)) %>%
@@ -186,17 +183,19 @@ hist(trump.tweet.markets.yes.section2$contract_lowerBinValue)
 #plot all points
 #plot(trump.tweet.markets$lastMarketClosedDate,trump.tweet.markets$contract_lowerBinValue)
 #plot(trump.tweet.markets.no$lastMarketClosedDate,trump.tweet.markets.no$contract_lowerBinValue)
-
+plot(trump.tweet.markets.yes$lastMarketClosedDate,trump.tweet.markets.yes$contract_lowerBinValue)
 plot(trump.tweet.markets.yes.section1$lastMarketClosedDate,trump.tweet.markets.yes.section1$contract_lowerBinValue)
 plot(trump.tweet.markets.yes.section2$lastMarketClosedDate,trump.tweet.markets.yes.section2$contract_lowerBinValue)
 
-summary(trump.tweet.markets.yes)
+trump.tweet.markets.yes %>%
+  select(lastMarketClosedDate,contractNameLength,contract_lowerBinValue,) %>%
+  summary()
 skimr::skim(trump.tweet.markets.yes)
 
 #look as some linear regression models
-#plot(lm(contract_lowerBinValue ~ lastMarketClosedDate , data = trump.tweet.markets.yes))
-#plot(lm(contract_lowerBinValue ~ lastMarketClosedDate , data = trump.tweet.markets.yes.section1))
-#plot(lm(contract_lowerBinValue ~ lastMarketClosedDate , data = trump.tweet.markets.yes.section2))
+plot(lm(contract_lowerBinValue ~ lastMarketClosedDate , data = trump.tweet.markets.yes))
+plot(lm(contract_lowerBinValue ~ lastMarketClosedDate , data = trump.tweet.markets.yes.section1))
+plot(lm(contract_lowerBinValue ~ lastMarketClosedDate , data = trump.tweet.markets.yes.section2))
 
 # Model Selection:
 # All Tweets
@@ -225,10 +224,9 @@ displaySimpleModelStats <- function(tweetDataToDescribe,strTitle) {
   plot(simpleModel$effects)
   plot(simpleModel$residuals)
 }
+
 displaySimpleModelStats(trump.tweet.markets.yes, "All: ")
 displaySimpleModelStats(trump.tweet.markets.yes.section1,paste0("<",dtNewProcess, ": "))
 displaySimpleModelStats(trump.tweet.markets.yes.section2,paste0(">",dtNewProcess, ": "))
 
 par(mfrow=c(1, 1))  # divides graph area back to one
-
-

@@ -10,5 +10,4 @@ INSERT INTO querySource (querySourceid,name,shortName,status) VALUES
 	(9,'GetMarketChartData;30 Days on an active market','30d Active','Active'),
 	(10,'GetMarketChartData;90 Days prior to Close','90d Closed','Closed'),
 	(11,'GetMarketChartData;90 Days on an active market','90d Active','Active'),
-	(12,'Twitter API','Twitter','Active')
-;
+	(12,'Twitter API','Twitter','Active');

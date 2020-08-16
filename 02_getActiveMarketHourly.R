@@ -1,68 +1,44 @@
+# Ensure we can use package management
+if(!require(pacman)){install.packages(pacman)}
 pacman::p_load(rpredictit, DBI, RSQLite, png, dplyr, curl, rstudioapi)
 configUseInMemoryDatabase <- FALSE
 # if configUseInMemoryDatabase is TRUE, then the sqlite database will be
-# read into memory, and all manipulations will happen in RAM, uppon completion
-# we write the database from memory back to file.
-# see: https://www.sqlite.org/inmemorydb.html
-# building out a normalized schema, with: https://dbdiagram.io/d
-# under seakintruth's github account
-# then using https://www.rebasedata.com/convert-mysql-to-sqlite-online
+
+pacman::p_load(magrittr)
+# Function scriptFileName() attempts to find the current scripts path to use relative path
+# Checks to see if script is source'd via:
+# command line, R console, RStudio,RStudio Console,RStudio Run Selection
+# returns '' if we are unable to find
+# http://stackoverflow.com/a/35842176/2292993
+# build and view db with https://sqlitebrowser.org/
 scriptFileName <- function() {
-    # https://stackoverflow.com/a/32016824/2292993
-    cmdArgs <- commandArgs(trailingOnly = FALSE)
-    needle <- "--file="
-    match <- grep(needle, cmdArgs)
-    tryAlternate <- FALSE
-    if (length(match) > 0) {
-        # Rscript via command line
-        return(normalizePath(sub(needle, "", cmdArgs[match])))
-    } else {
-        ls_vars <- ls(sys.frames()[[1]])
-        if (exists(ls_vars)) {
-            if ("fileName" %in% ls_vars) {
-                # Source'd via RStudio
-                return(normalizePath(sys.frames()[[1]]$fileName))
+    tryCatch({
+        cmdArgs <- commandArgs(trailingOnly = FALSE)
+        matchFound = "--file=" %>% grep(cmdArgs)
+        if (matchFound %>% length() > 0) {
+            "--file=" %>% sub("", cmdArgs[matchFound]) %>% normalizePath() %% return()
+        } else if ("fileName" %in% (sys.frames()[[1]] %>% ls())){
+            sys.frames()[[1]]$fileName %>% normalizePath() %>% return()
+        } else if (sys.frames()[[1]]$ofile %>% is.null()){
+            if (pacman::p_exists(rstudioapi)){
+                pth = rstudioapi::getActiveDocumentContext()$path
+                if (pth == '') {
+                    rstudioapi::getSourceEditorContext()$path %>%
+                        normalizePath() %>% return()
+                } else {pth %>% normalizePath() %>% return()}
             } else {
-                tryAlternate <- TRUE
+                message("WARNING:Unable to find script path automatically select this script.")
+                file.choose() %>% return()
             }
         } else {
-            tryAlternate <- TRUE
+            sys.frames()[[1]]$ofile %>% normalizePath() %>% return()
         }
-    }
-    if (tryAlternate){
-        if (!is.null(sys.frames()[[1]]$ofile)) {
-            # Source'd via R console
-            return(normalizePath(sys.frames()[[1]]$ofile))
-        } else {
-            # RStudio Run Selection
-            # http://stackoverflow.com/a/35842176/2292993
-            pth = rstudioapi::getActiveDocumentContext()$path
-            if (pth!='') {
-                return(normalizePath(pth))
-            } else {
-                # RStudio Console
-                tryCatch(
-                    {
-                        pth <- rstudioapi::getSourceEditorContext()$path
-                        pth <- normalizePath(pth)
-                    }, error <- function(e) {
-                        # normalizePath('') issues warning/error
-                        pth <- ''
-                    }
-                )
-                return(pth)
-            }
-        }
-    }
+    }, error = function(e) {
+        message("WARNING:Unable to find script path automatically select this script.")
+        file.choose() %>% return()
+    })
 }
-tmpFileName <- try(scriptFileName())
-if (class(tmpFileName)=="try-error"){
-    message("WARNING:	Unable to find script path automatically")
-    #projectDirectory <- file.path("/media","jeremy","250GbUsb","data","r","predictit")
-    projectDirectory <- file.path("D:","data","r","predictit")
-} else {
-    projectDirectory <- dirname(tmpFileName)
-}
+projectDirectory <- dirname(scriptFileName())
 # A usefull sqlite tutorial:
 # https://www.sqlitetutorial.net
 
@@ -427,7 +403,19 @@ openDbConn <- function(databaseFileName,fUseInMemoryDatabase){
     return(db)
 }
 
+#function with pipes
 executeSqlFromFile <- function(sqlFile,db){
+    queryReturn <-  sqlFile %>%
+        readLines(warn=FALSE) %>%
+        paste(collapse=" ") %>%
+        strsplit(";") %>%
+        unlist() %>%
+        lapply(FUN=.dbSendQueryClear,db) %>%
+        try(silent=TRUE)
+}
+
+# Same function without pipes
+exmpleFunctionWithouthPipes_executeSqlFromFile <- function(sqlFile,db){
     createSql <-
         unlist(
             strsplit(
@@ -451,7 +439,11 @@ executeSqlFromFile <- function(sqlFile,db){
     )
 }
 
+
 getOpenMarkets <- function(databaseFileName,configUseInMemoryDatabase){
+    # usage:
+    # getOpenMarkets(file.path(projectDirectory,"data","openMarkets.sqlite"), configUseInMemoryDatabase)
+
     # all markets are updated every delaySeconds seconds...
     # so for a history we would need to capture a new timestamp's worth of data every minute...
     # If I was to do this then I need to normalize the data into a table RSQLlight?
@@ -463,8 +455,8 @@ getOpenMarkets <- function(databaseFileName,configUseInMemoryDatabase){
     # DBI::dbDisconnect(db)
     existing.tables <- DBI::dbListTables(db)
     all.market.data.now <- rpredictit::all_markets()
-    #get all open markets: (starting at 1231)
-    openMarkets <- setdiff(seq(1231,max(all.market.data.now$id)),all.market.data.now$id)
+    #get all open markets: (starting at 1100)
+    openMarkets <- setdiff(seq(1100,max(all.market.data.now$id)),all.market.data.now$id)
 
     # Create database and all planned tables if no tables exist,
     # setup foregin keys with: https://www.techonthenet.com/sqlite/foreign_keys/foreign_keys.php
@@ -474,37 +466,25 @@ getOpenMarkets <- function(databaseFileName,configUseInMemoryDatabase){
     # SQL documentation: https://www.sqlite.org/lang.html
     # These sql queries are built to only execute if a table or index is missing
     # Create Tables
-    executeSqlFromFile(
-        file.path(projectDirectory,"sql","01aCreateDbTables.sql"),
-        db
-    )
-    # Create indexes
-    executeSqlFromFile(
-        file.path(projectDirectory,"sql","01bCreateDbIndexes.sql"),
-        db
-    )
 
+    attempt <- file.path(projectDirectory,"sql","01aCreateDbTables.sql") %>%
+        executeSqlFromFile(db)
+    print(attempt)
+
+    # Create indexes
+    file.path(projectDirectory,"sql","01bCreateDbIndexes.sql") %>%
+        executeSqlFromFile(db)
+
+        # Create indexes
     #Insert lookup_querySource rows we expect an error here if the querySourceId allready exists, so we ignore it
-    try(
-        .dbSendQueryClear(
-            "
-            INSERT INTO querySource (querySourceId,name,shortName,status) VALUES
-            (1,'MarketData by market ID','Market','Closed'),
-            (2,'MarketDataAll','All Data','Open'),
-            (3,'MarketTweetData','Tweets','Open'),
-            (4,'GetMarketChartData;24 Hours prior to Close','24h Closed','Closed'),
-            (5,'GetMarketChartData;24 Hour on an active market','24h Active'),
-            (6,'GetMarketChartData;7 Days prior to Close','7d Closed','Closed'),
-            (7,'GetMarketChartData;7 Days on an active market','7d Active','Active'),
-            (8,'GetMarketChartData;30 Days prior to Close','30d Closed','Closed'),
-            (9,'GetMarketChartData;30 Days on an active market','30d Active','Active'),
-            (10,'GetMarketChartData;90 Days prior to Close','90d Closed','Closed'),
-            (11,'GetMarketChartData;90 Days on an active market','90d Active','Active');
-            ",
+    errFillLookupQuerySource <- try(
+        executeSqlFromFile(
+            file.path(projectDirectory,"sql","01cInsert-querySource-DefaultValues.sql"),
             db
-        ),
-        silent = TRUE
+        )
     )
+    errFillLookupQuerySource
+
     existingopenData <- .dbSendQueryFetch(
         "
         SELECT DISTINCT marketId
@@ -568,7 +548,8 @@ getOpenMarkets <- function(databaseFileName,configUseInMemoryDatabase){
 repeat{
     queryTimeBeginDaily <- Sys.time()
     # Repeat forever, getting the new content
-    getOpenMarkets(file.path(projectDirectory,"data","data.sqlite"), configUseInMemoryDatabase)
+    #getOpenMarkets(file.path(projectDirectory,"data","data.sqlite"), configUseInMemoryDatabase)
+    getOpenMarkets(file.path(projectDirectory,"data","openMarkets.sqlite"), configUseInMemoryDatabase)
     query.time.end.daily <- Sys.time()
 
     ## Delay one day between each call
