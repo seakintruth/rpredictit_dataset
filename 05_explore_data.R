@@ -1,7 +1,7 @@
 # Ensure we can use package management
 if(!require(pacman)){install.packages(pacman)}
 # Load all of this script's packages
-pacman::p_load(tidyverse,ggplot,corrplot,olsrr)
+pacman::p_load(tidyverse,ggplot2,corrplot,olsrr) #,
 pacman::p_load(magrittr)
 # Function scriptFileName() attempts to find the current scripts path to use relative path
 # Checks to see if script is source'd via:

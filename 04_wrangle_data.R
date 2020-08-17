@@ -45,47 +45,25 @@ if (!exists("closed.results")) {
     projectDirectory %>%
         file.path("03_readMarketDataFromDb.R") %>%
         source(echo=TRUE)
+    # timestamp is the date/time the data was pulled...
+    closed.results.original <- closed.results
+    closed.chart.data.original <- closed.chart.data
 }
 
-# timestamp is the date/time the data was pulled...
-closed.results.original <- closed.results
 # Start wrangling!
-# update our timestamp and date column to be a date/time value
-closed.results$timeStamp <- closed.results$timeStamp %>%
-    lubridate::as_datetime()
-
 # convert dateEnd column to dateTime
+# update our timestamp and date column to be a date/time value
 # most common format is:   ymd_hms() , some are not,  attempting to sue guess_formats
-closed.results$dateEnd <- closed.results$dateEnd %>% lubridate::ymd_hms()
-closed.results$dateEnd %>% summary()
+closed.results <- closed.results %>%
+    mutate(dateEnd = closed.results$dateEnd %>% lubridate::ymd_hms()) %>%
+    mutate(timeStamp = closed.results$timeStamp %>% lubridate::as_datetime()) %>%
+    mutate(dateEndCharacterLength = closed.results.original$dateEnd %>% stringr::str_length())
 
-# nearly a quarter of all data has no end date, so we can't use this value
+closed.results %>% dplyr::select(dateEnd,timeStamp) %>% summary()
+# nearly a quarter of all data has no end date, so we can't use this value as is
 
-# finding character values that are shorter than expected...
-closed.results$dateEndCharacterLength <- closed.results.original$dateEnd %>%
-    stringr::str_length()
-
-dateEndShort <- closed.results %>%
-    dplyr::select(dateEndCharacterLength,dateEnd) %>%
-    dplyr::filter(dateEndCharacterLength < 19) %>%
-    dplyr::select(dateEnd) %>%
-    unique()
-
-dateEndShort
-
-# dateEndShort column contains categorical dateEndStatus text, options include
-#'No End Date','see rules','See rules.','Extended','N/A', some dates are formated as mdy
-validNonStandardDays <- dateEndShort %>%
-    lubridate::mdy()
-validNonStandardDays
-
-# [todo] could finish the train of though of fixing missing dates, probably not worth the time
-
-# let's pivot our method of attempting to get a contract/market end date
 # we should be able to get our last date from the max date of closed.chart.data
 # for each contract
-closed.chart.data %>% tibble::glimpse()
-
 # convert date column to date object
 closedChartDate <- closed.chart.data %>%
     dplyr::select(contractId,date) %>%
@@ -98,16 +76,22 @@ closedChartDate_max <- closedChartDate %>%
     group_by(contractId) %>%
     summarise(lastDate = max(date))
 
+
+# finding character values that are shorter than expected...
+dateEndShort <- closed.results %>%
+    dplyr::select(dateEndCharacterLength,dateEnd) %>%
+    dplyr::filter(dateEndCharacterLength < 19) %>%
+    dplyr::select(dateEnd)
+
+
+
 # set our keys to the same name so we can join on that.
 closedChartDate_max <- closedChartDate_max %>%
     dplyr::rename(contract_id = contractId)
-
-glimpse(closed.results)
-glimpse(closedChartDate_max)
 closed.results.endDate <-  closed.results %>%
     dplyr::full_join(closedChartDate_max,by="contract_id")
 
-tibble::glimpse(closed.results.endDate)
+#tibble::glimpse(closed.results.endDate)
 colSums(is.na(closed.results.endDate))
 # we still have 5k and 6k missing last date so lets dplyr::coalesce()
 # to see if we gained anything from the chart data
@@ -115,23 +99,18 @@ colSums(is.na(closed.results.endDate))
 # closed.results.endDate$lastDate
 closed.results.endDate$lastEndDate <-  dplyr::coalesce(
     closed.results.endDate$lastDate,
-    closed.results.endDate$dateEnd %>% as_date()
+    closed.results.endDate$dateEnd %>% lubridate::as_date()
 )
 
 colSums(is.na(closed.results.endDate))
 # Yup, that works, we went from 25% down to 7.7% missing end dates!
-skimr::skim(closed.results.original)
-skimr::skim(closed.results.endDate)
 
 summary(closed.results.endDate$lastDate)
-closed.results %>% tibble::glimpse()
-
+#closed.results %>% tibble::glimpse()
 # Markets with a single contract are yes/no questions
 # (Yes = .99 and no= 0.01 price) let's create a cloumn identifying those
-
-summary(closed.results)
-summary(closed.results.endDate)
-
+#summary(closed.results)
+#summary(closed.results.endDate)
 # let's export our cleaned up data
 closed.results.clean <- closed.results.endDate %>%
     rename(
@@ -149,14 +128,13 @@ closed.results.clean <- closed.results.endDate %>%
         -bestSellNoCost,-bestSellYesCost
     )
 
+rm("closed.results","closed.chart.data","closed.results.endDate","closedChartDate")
 
-skimr::skim(closed.results.clean)
-saveRDS(closed.results.clean,file.path(projectDirectory,"data", "closedResultsClean.RDS"))
-
+# saveRDS(closed.results.clean,file.path(projectDirectory,"data", "closedResultsClean.RDS"))
 # ------------------------------------------------------
 # a little exploration
 # ------------------------------------------------------
-glimpse( closed.results.clean)
+# glimpse( closed.results.clean)
 market.obs <- closed.results.clean %>%
     dplyr::group_by(market_id,marketName,marketShortName,timeStamp) %>%
     count()
@@ -210,27 +188,27 @@ contractClosedNoDailyCount <- contractClosedNoDaily %>%
     rename('Contract Count' = n,'Planned Close Date' = lastClosedDate)
 
 # Plot Points
-plot(contractClosedYesDailyCount,type="p",col="red")
-lines(contractClosedNoDailyCount,type="p",col="blue")
+#plot(contractClosedYesDailyCount,type="p",col="red")
+#lines(contractClosedNoDailyCount,type="p",col="blue")
 
 # Plot hist and lines
-plot(contractClosedYesDailyCount,type="h", col="red",lwd=2)
-lines(stats::lowess(contractClosedYesDailyCount),col="red",lwd = 5)
-plot(contractClosedNoDailyCount,type="h", col="light blue",lwd = 5)
-lines(stats::lowess(contractClosedNoDailyCount),col="blue",lwd = 5)
+#plot(contractClosedYesDailyCount,type="h", col="red",lwd=2)
+#lines(stats::lowess(contractClosedYesDailyCount),col="red",lwd = 5)
+#plot(contractClosedNoDailyCount,type="h", col="light blue",lwd = 5)
+#lines(stats::lowess(contractClosedNoDailyCount),col="blue",lwd = 5)
 # --------------------------------------------------------------------------
 # Weekly Grouping Frequency
 contractClosedYesWeekly <- contractClosedYes %>%
     select(lastClosedDate,lastTradePrice) %>%
     mutate(lastClosedDate=lubridate::isoweek(lastClosedDate)) %>%
     select(lastClosedDate,lastTradePrice)
-summary(contractClosedYesWeekly)
+#summary(contractClosedYesWeekly)
 contractClosedNoWeekly <- contractClosedNo %>%
     select(lastClosedDate,lastTradePrice) %>%
     mutate(contractClosedYesWeekly=lubridate::as_datetime(contractClosedNo$lastClosedDate)) %>%
     mutate(lastClosedDate=lubridate::isoweek(lastClosedDate)) %>%
     select(lastClosedDate,lastTradePrice)
-summary(contractClosedNoWeekly)
+#summary(contractClosedNoWeekly)
 contractClosedYesWeeklyCount <- contractClosedYesWeekly %>%
     group_by(lastClosedDate) %>%
     tally() %>%
@@ -243,16 +221,16 @@ contractClosedNoWeeklyCount <- contractClosedNoWeekly %>%
     rename('Contract Count' = n,'Planned Close Week' = lastClosedDate)
 
 # Plot Points
-plot(contractClosedNoWeeklyCount,type="p",col="blue")
-lines(contractClosedYesWeeklyCount,type="p",col="red")
+# plot(contractClosedNoWeeklyCount,type="p",col="blue")
+# lines(contractClosedYesWeeklyCount,type="p",col="red")
 
 # Plot hist and lines
 
-plot(contractClosedNoWeeklyCount,type="h", col="light blue",lwd=5)
-lines(stats::lowess(contractClosedNoWeeklyCount),type="l",col="blue",lwd = 5)
+# plot(contractClosedNoWeeklyCount,type="h", col="light blue",lwd=5)
+# lines(stats::lowess(contractClosedNoWeeklyCount),type="l",col="blue",lwd = 5)
 
-plot(contractClosedYesWeeklyCount,type="h", col="pink",lwd=5)
-lines(stats::lowess(contractClosedYesWeeklyCount),type="l",col="red",lwd = 5)
+# plot(contractClosedYesWeeklyCount,type="h", col="pink",lwd=5)
+# lines(stats::lowess(contractClosedYesWeeklyCount),type="l",col="red",lwd = 5)
 # --------------------------------------------------------------------------
 # Monthly Grouping Frequency
 contractClosedYesMonthly <- contractClosedYes %>%
@@ -276,7 +254,7 @@ contractClosedNoMonthlyCount <- contractClosedNoMonthly %>%
     rename('Contract Count' = n,'Planned Close Month' = lastClosedDate)
 
 # Plot Points
-plot(contractClosedNoMonthlyCount,type="p",col="blue")
+#plot(contractClosedNoMonthlyCount,type="p",col="blue")
 #lines(contractClosedYesMonthlyCount,type="p",col="red")
 
 
@@ -285,15 +263,15 @@ plot(contractClosedNoMonthlyCount,type="p",col="blue")
 #    contractClosedYesMonthlyCount$`Contract Count` #,
 ##    contractClosedNoMonthlyCount$`Contract Count`
 #)
-#plotYlimRange <-c(
+# plotYlimRange <-c(
 #    min(plotYlimRange,na.rm=TRUE),
 #    max(plotYlimRange,na.rm=TRUE)
-#)
-plot(contractClosedNoMonthlyCount,type="h", col="light blue",lwd=20)
-lines(stats::lowess(contractClosedNoMonthlyCount),type="l",col="blue",lwd = 5)
+# )
+# plot(contractClosedNoMonthlyCount,type="h", col="light blue",lwd=20)
+# lines(stats::lowess(contractClosedNoMonthlyCount),type="l",col="blue",lwd = 5)
 
-plot(contractClosedYesMonthlyCount,type="h", col="pink",lwd=20)
-lines(stats::lowess(contractClosedYesMonthlyCount),type="l",col="red",lwd = 5)
+#plot(contractClosedYesMonthlyCount,type="h", col="pink",lwd=20)
+#lines(stats::lowess(contractClosedYesMonthlyCount),type="l",col="red",lwd = 5)
 
 # --------------------------------------------------------------------------
 # [TODO] Export all plots , This doesn't work as expected skipping for now
@@ -317,18 +295,15 @@ if (FALSE) {
     )
 }
 
-undecidedContracts <-    market.obs %>%
+undecidedContracts <- market.obs %>%
     dplyr::filter(market_id %in% contractMidFilter$market_id)
+# skimr::skim(undecidedContracts)
 
 write.csv(
     undecidedContracts,
     file.path(projectDirectory,"undecided_contracts.csv"))
 
-list.files(projectDirectory)
-
-
-str(closed.results.clean)
-glimpse(closed.results.clean)
-summary(closed.results.clean)
-skimr::skim(closed.results.clean)
-
+# str(closed.results.clean)
+# glimpse(closed.results.clean)
+# summary(closed.results.clean)
+# skimr::skim(closed.results.clean)
