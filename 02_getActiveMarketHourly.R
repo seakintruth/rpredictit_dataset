@@ -469,7 +469,6 @@ getOpenMarkets <- function(databaseFileName,configUseInMemoryDatabase){
 
     attempt <- file.path(projectDirectory,"sql","01aCreateDbTables.sql") %>%
         executeSqlFromFile(db)
-    print(attempt)
 
     # Create indexes
     file.path(projectDirectory,"sql","01bCreateDbIndexes.sql") %>%
