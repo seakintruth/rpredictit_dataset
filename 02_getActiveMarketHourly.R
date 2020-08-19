@@ -189,7 +189,8 @@ requestMarketopenValue <- function(openMarkets,db){
                 imageUrl ,
                 dateEnd
             ) %>%
-            dplyr::mutate(dateEnd = lubridate::ymd_hms(dateEnd))
+            dplyr::mutate(dateEnd = lubridate::ymd_hms(dateEnd)) %>%
+            unique()
         error.appendMarket <- try(
             result <- DBI::dbAppendTable(conn=db,"market",markets)
         )
