@@ -1,6 +1,8 @@
 # Ensure we can use package management
 if(!require(pacman)){install.packages(pacman)}
-pacman::p_load(rpredictit, DBI, RSQLite, png, dplyr, curl, rstudioapi)
+pacman::p_load(rpredictit, DBI, RSQLite, png, dplyr, curl, rstudioapi, lubridate)
+
+
 configUseInMemoryDatabase <- FALSE
 # if configUseInMemoryDatabase is TRUE, then the sqlite database will be
 
@@ -52,109 +54,6 @@ delaySeconds <- 8
 
 # Some Global Variables...
 # ------------------------------------------------------------------------------
-# [TODO] columns$.... represent the columns needed for a normalized relational db
-# this is not yet implemented...
-# columns <- list(
-#     market="
-#     id INTEGER,
-#     name TEXT,
-#     shortName TEXT,
-#     image TEXT,
-#     image_rowId INTEGER
-#     ",
-#     contract="
-#     contract_id INTEGER,
-#     image_rowId INTEGER,
-#     contract_name TEXT,
-#     contract_shortName TEXT
-#     ",
-#     marketObservation="
-#     timeStamp DATETIME,
-#     id INTEGER,
-#     status TEXT,
-#     contract_id INTEGER,
-#     contract_status TEXT,
-#     lastTradePrice DOUBLE,
-#     bestBuyYesCost DOUBLE,
-#     bestBuyNoCost DOUBLE,
-#     bestSellYesCost DOUBLE,
-#     bestSellNoCost DOUBLE,
-#     lastClosePrice DOUBLE,
-#     displayOrder INTEGER,
-#     querySource INTEGER
-#     ",
-#     chartData="
-#     marketId INTEGER,
-#     contractId INTEGER,
-#     date DATETIME,
-#     openSharePrice DOUBLE,
-#     highSharePrice DOUBLE,
-#     lowSharePrice DOUBLE,
-#     closeSharePrice DOUBLE,
-#     tradeVolume DOUBLE,
-#     querySource INTEGER
-#     "
-# )
-#
-# marketColumns <- (
-#     "
-#     id INTEGER,
-#     name TEXT,
-#     shortName TEXT,
-#     image TEXT,
-#     url TEXT
-#     "
-# )
-#
-# contractColumns <- (
-#     "
-#     contract_id INTEGER,
-#     contract_image TEXT,
-#     contract_name TEXT,
-#     contract_shortName TEXT
-#     "
-# )
-#
-# marketObservationColumns <- (
-#     "
-#     timeStamp DATETIME,
-#     id INTEGER,
-#     name TEXT,
-#     shortName TEXT,
-#     image TEXT,
-#     url TEXT,
-#     status TEXT,
-#     contract_id INTEGER,
-#     dateEnd DATETIME,
-#     contract_image TEXT,
-#     contract_name TEXT,
-#     contract_shortName TEXT,
-#     contract_status TEXT,
-#     lastTradePrice DOUBLE,
-#     bestBuyYesCost DOUBLE,
-#     bestBuyNoCost DOUBLE,
-#     bestSellYesCost DOUBLE,
-#     bestSellNoCost DOUBLE,
-#     lastClosePrice DOUBLE,
-#     displayOrder INTEGER,
-#     querySource INTEGER
-#     "
-# )
-#
-# chartDataColumns <- (
-#     "
-#     marketId INTEGER,
-#     contractId INTEGER,
-#     contractName TEXT,
-#     date DATETIME,
-#     openSharePrice DOUBLE,
-#     highSharePrice DOUBLE,
-#     lowSharePrice DOUBLE,
-#     closeSharePrice DOUBLE,
-#     tradeVolume DOUBLE,
-#     querySource INTEGER
-#     "
-# )
 
 delayDurringSiteMaintanence <- function(http.response, check.url){
     # handle a site maintenance message:
@@ -226,42 +125,74 @@ requestMarketopenValue <- function(openMarkets,db){
             message("attempting to query id:",openMarkets[market.id])
 
             # [TODO] Query here to make new marketId in table market, if row doesn't exist yet
-            market.observations <- this.market[
-                c(
-                    "timeStamp",
-                    "contract_id",
-                    "contract_status",
-                    "id",
-                    "status",
-                    "lastTradePrice",
-                    "bestBuyYesCost",
-                    "bestBuyNoCost",
-                    "bestSellYesCost",
-                    "bestSellNoCost",
-                    "lastClosePrice",
-                    "displayOrder",
-                    "querySource"
-                )
-            ]
-             names(market.observations) <- c(
-                "dateTimeStamp",
-                "contractId",
-                "contractStatus",
-                "marketId",
-                "marketStatus",
-                "lastTradePrice",
-                "bestBuyYesCost",
-                "bestBuyNoCost",
-                "bestSellYesCost",
-                "bestSellNoCost",
-                "lastClosePrice",
-                "displayOrder",
-                "querySourceId"
-            )
-            error.checking <- try(
-                result <- DBI::dbAppendTable(conn=db,"marketObservation",this.market)
-            )
+            market.observations <- this.market %>%
+                dplyr::rename(
+                    dateTimeStamp = timeStamp,
+                    contractId = contract_id,
+                    contractStatus = contract_status,
+                    marketId = id,
+                    marketStatus = status,
+                    querySourceId = querySource
+                ) %>%
+                dplyr::select(
+                    dateTimeStamp,
+                    dateEnd,
+                    contractId,
+                    contractStatus,
+                    marketId,
+                    marketStatus,
+                    lastTradePrice,
+                    bestBuyYesCost,
+                    bestBuyNoCost,
+                    bestSellYesCost,
+                    bestSellNoCost,
+                    lastClosePrice,
+                    displayOrder,
+                    querySourceId
+                ) %>%
+                dplyr::mutate(dateEnd = lubridate::ymd_hms(dateEnd))
         }
+        error.appendMarketObservation <- try(
+            result <- DBI::dbAppendTable(conn=db,"marketObservation",market.observations)
+        )
+        contracts <- this.market %>%
+            dplyr::rename(
+                contractId = contract_id,
+                imageUrl = contract_image,
+                marketId = id,
+                contractName = contract_name,
+                contractShortName = contract_shortName
+            ) %>%
+            dplyr::select(
+                contractId ,
+                imageUrl ,
+                marketId ,
+                contractName,
+                contractShortName,
+                dateEnd
+            ) %>%
+            dplyr::mutate(dateEnd = lubridate::ymd_hms(dateEnd))
+
+        error.appendContract <- try(
+            result <- DBI::dbAppendTable(conn=db,"contract",contracts)
+        )
+        markets <- this.market %>%
+            dplyr::rename(
+                marketId = id,
+                imageUrl = image
+            ) %>%
+            dplyr::select(
+                marketId ,
+                name ,
+                shortName ,
+                url,
+                imageUrl ,
+                dateEnd
+            ) %>%
+            dplyr::mutate(dateEnd = lubridate::ymd_hms(dateEnd))
+        error.appendMarket <- try(
+            result <- DBI::dbAppendTable(conn=db,"market",markets)
+        )
         query.time.end <- Sys.time()
         # we just made a call so wait our delay period
         sleepLessProcessTime(query.time.end, queryTimeBegin)
@@ -274,7 +205,7 @@ appendChartData <- function(db,id,timeFrame){
         querySourceVal <- switch(
             timeFrame,
             "24h" = 4,
-            "7d"=6,
+            "7d" = 6,
             "30d" = 8,
             "90d" = 10
         )
@@ -313,9 +244,42 @@ appendChartData <- function(db,id,timeFrame){
                         length(unlist(this.market[1]))
                     )
                     message("Saving market id : ",id," @ ",timeFrame)
+                    # Normalize the data a place into the database
+
+                    marketChartData <- this.market %>%
+                        mutate(date=lubridate::ymd_hms(date)) %>%
+                        dplyr::rename(dateTimeStamp = date,
+                                      querySourceId = querySource) %>%
+                        dplyr::select(marketId,
+                                      contractId,
+                                      dateTimeStamp,
+                                      querySourceId,
+                                      openSharePrice,
+                                      highSharePrice,
+                                      lowSharePrice,
+                                      closeSharePrice,
+                                      tradeVolume
+                      )
                     error.checking <- try(
-                        results <- DBI::dbAppendTable(conn=db,"marketopenChartData",this.market)
+                        results <- DBI::dbAppendTable(conn=db,
+                                      "marketChartData",marketChartData)
                     )
+                    # we aren't saving contract info from chart data,
+                    # we save it from the API call...
+                    if (FALSE) {
+                        error.checking.add.contract <- try(
+                            results <- DBI::dbAppendTable(
+                                conn=db,
+                                "contract",
+                                this.market %>%
+                                    dplyr::select(contractId,marketId,contractName) %>%
+                                    unique()
+                            )
+                        )
+                        if (class(error.checking.add.contract) == "try-error") {
+                            #[todo] contractId allready exists, maybe update contract Name?
+                        }
+                    }
                 } else {
                     fSaveAsNull <- TRUE
                 }
@@ -343,12 +307,13 @@ appendChartData <- function(db,id,timeFrame){
 }
 
 getChartDataValue <- function(openMarkets,db){
-    # rather than using a lapply here a for loop is used in this process as we NEVER plan on parallelizing
+    # rather than using a lapply here a for loop is used in this process as we
+    # NEVER plan on parallelizing
     for (market.id in seq_along(openMarkets)){
         queryTimeBegin <- Sys.time()
         message("getting market chart data: ",openMarkets[market.id])
-        appendChartData(db,openMarkets[market.id],"24h")
         appendChartData(db,openMarkets[market.id],"7d")
+        appendChartData(db,openMarkets[market.id],"24h")
         appendChartData(db,openMarkets[market.id],"30d")
         appendChartData(db,openMarkets[market.id],"90d")
         query.time.end <- Sys.time()
@@ -443,7 +408,6 @@ exmpleFunctionWithouthPipes_executeSqlFromFile <- function(sqlFile,db){
 getOpenMarkets <- function(databaseFileName,configUseInMemoryDatabase){
     # usage:
     # getOpenMarkets(file.path(projectDirectory,"data","openMarkets.sqlite"), configUseInMemoryDatabase)
-
     # all markets are updated every delaySeconds seconds...
     # so for a history we would need to capture a new timestamp's worth of data every minute...
     # If I was to do this then I need to normalize the data into a table RSQLlight?
@@ -455,9 +419,9 @@ getOpenMarkets <- function(databaseFileName,configUseInMemoryDatabase){
     # DBI::dbDisconnect(db)
     existing.tables <- DBI::dbListTables(db)
     all.market.data.now <- rpredictit::all_markets()
-    #get all open markets: (starting at 1100)
+    #get all markets: (starting at 1100)
     openMarkets <- setdiff(seq(1100,max(all.market.data.now$id)),all.market.data.now$id)
-
+    # openMarkets <- all.market.data.now
     # Create database and all planned tables if no tables exist,
     # setup foregin keys with: https://www.techonthenet.com/sqlite/foreign_keys/foreign_keys.php
     # on refactor we could create tables one at a time if that particular table is missing by checking:
@@ -467,11 +431,11 @@ getOpenMarkets <- function(databaseFileName,configUseInMemoryDatabase){
     # These sql queries are built to only execute if a table or index is missing
     # Create Tables
 
-    attempt <- file.path(projectDirectory,"sql","01aCreateDbTables.sql") %>%
+    attemptCreate <- file.path(projectDirectory,"sql","01aCreateDbTables.sql") %>%
         executeSqlFromFile(db)
 
     # Create indexes
-    file.path(projectDirectory,"sql","01bCreateDbIndexes.sql") %>%
+    attemptIndex <- file.path(projectDirectory,"sql","01bCreateDbIndexes.sql") %>%
         executeSqlFromFile(db)
 
         # Create indexes
@@ -482,7 +446,7 @@ getOpenMarkets <- function(databaseFileName,configUseInMemoryDatabase){
             db
         )
     )
-    errFillLookupQuerySource
+    #errFillLookupQuerySource
 
     existingopenData <- .dbSendQueryFetch(
         "
@@ -512,7 +476,6 @@ getOpenMarkets <- function(databaseFileName,configUseInMemoryDatabase){
     openMarketsMissingData <- base::setdiff(openMarkets,union(unlist(existingopenData),unlist(nullMarketId)))
     openMarketsMissingChartData <- base::setdiff(openMarkets,union(unlist(existingChartData),unlist(nullMarketId)))
 
-    # [TODO] fix requestMarketopenValue AND getChartDataValue
     if(length(openMarketsMissingData)==0){
         message("No newly open markets exist")
     } else {
@@ -543,20 +506,24 @@ getOpenMarkets <- function(databaseFileName,configUseInMemoryDatabase){
     DBI::dbDisconnect(db)
 }
 
+
+hoursWorthOfSeconds <- 60^2
+daysWorthOfSeconds <- hoursWorthOfSeconds * 24
+
 # Kicks off getting all open markets daily
 repeat{
-    queryTimeBeginDaily <- Sys.time()
+    queryTimeBeginHourly <- Sys.time()
     # Repeat forever, getting the new content
     #getOpenMarkets(file.path(projectDirectory,"data","data.sqlite"), configUseInMemoryDatabase)
     getOpenMarkets(file.path(projectDirectory,"data","openMarkets.sqlite"), configUseInMemoryDatabase)
-    query.time.end.daily <- Sys.time()
+    queryTimeEndHourly <- Sys.time()
 
     ## Delay one day between each call
     ## Note: Should probably schedule this script to run daily with the user's OS scheduling solution,
     ## but currently the first run could take roughtly 4 days to finish
-    message("search complete, waiting a day.")
-    days.worth.of.seconds <- 86400
-    if(as.double(difftime(query.time.end.daily,queryTimeBeginDaily, tz,units ="secs"))<days.worth.of.seconds){
-        Sys.sleep(days.worth.of.seconds-as.double(difftime( query.time.end.daily,queryTimeBeginDaily, tz,units ="secs")))
+    message("search complete, waiting a hour. Will resume at:")
+
+    if(as.double(difftime(queryTimeEndHourly,queryTimeBeginHourly, tz,units ="secs"))<hoursWorthOfSeconds){
+        Sys.sleep(hoursWorthOfSeconds-as.double(difftime( queryTimeEndHourly,queryTimeBeginHourly, tz,units ="secs")))
     }
 }

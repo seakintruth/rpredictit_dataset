@@ -1,7 +1,7 @@
 CREATE TABLE IF NOT EXISTS market (
   marketId INTEGER PRIMARY KEY,
   name TEXT,
-  sortName TEXT,
+  shortName TEXT,
   url TEXT,
   imageUrl TEXT,
   dateEnd DATETIME,
@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS image (
 );
 CREATE TABLE IF NOT EXISTS marketObservation (
   dateTimeStamp DATETIME,
+  dateEnd DATETIME,
   contractId INTEGER,
   contractStatus TEXT,
   marketId INTEGER,
