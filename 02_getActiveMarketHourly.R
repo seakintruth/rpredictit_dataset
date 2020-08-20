@@ -233,11 +233,13 @@ appendChartData <- function(db,id,timeFrame){
                 this.market <- NULL
                 error.checking <- NULL
                 if(length(r)>0){
-                    error.checking <- try(
-                        this.market  <- as.data.frame(r) %>%
-                            select(-.data$dateString) %>%
-                            select(-.data$lineColor)
-                    )
+                    error.checking <- try( {
+                        this.market <- as.data.frame(r) %>%
+                            dplyr::select(-lineColor)
+                        if("dateString" %in% colnames(this.market)) {
+                            this.market <- dplyr::select(this.market,dateString)
+                        }
+                    })
                 }
                 if (!is.null(this.market)) {
                     this.market[["querySource"]] <- rep(
@@ -415,13 +417,35 @@ getOpenMarkets <- function(databaseFileName,configUseInMemoryDatabase){
     # may need for streaming annalysis?
     # pacman::p_load(stream)
 
+    #Get Closed Makets, so we can ignore them
+    dbClosed <- openDbConn(file.path(projectDirectory,"data","closed.sqlite"),FALSE)
+    existing.tables.closed <- DBI::dbListTables(dbClosed)
+    existingClosedMarkets <- .dbSendQueryFetch(
+        "
+                SELECT DISTINCT id
+                FROM market_observations
+                WHERE Status LIKE 'Closed'
+            ",
+        dbClosed
+    )
+    # Clean up open database connections
+    DBI::dbDisconnect(dbClosed)
     db <- openDbConn(databaseFileName, configUseInMemoryDatabase)
     # Don't forget to clean up open database connections with:
     # DBI::dbDisconnect(db)
     existing.tables <- DBI::dbListTables(db)
     all.market.data.now <- rpredictit::all_markets()
     #get all markets: (starting at 1100)
-    openMarkets <- setdiff(seq(1100,max(all.market.data.now$id)),all.market.data.now$id)
+    openMarkets <- 1200 %>%
+        seq(
+            all.market.data.now$id %>%
+            max()
+        ) %>%
+        dplyr::setdiff(all.market.data.now$id)
+
+    # remove closed markets
+    openMarkets <- dplyr::setdiff(openMarkets,existingClosedMarkets$id)
+
     # openMarkets <- all.market.data.now
     # Create database and all planned tables if no tables exist,
     # setup foregin keys with: https://www.techonthenet.com/sqlite/foreign_keys/foreign_keys.php
@@ -430,8 +454,8 @@ getOpenMarkets <- function(databaseFileName,configUseInMemoryDatabase){
     # Create any missin the database tables
     # SQL documentation: https://www.sqlite.org/lang.html
     # These sql queries are built to only execute if a table or index is missing
-    # Create Tables
 
+    # Create Tables
     attemptCreate <- file.path(projectDirectory,"sql","01aCreateDbTables.sql") %>%
         executeSqlFromFile(db)
 
@@ -507,10 +531,8 @@ getOpenMarkets <- function(databaseFileName,configUseInMemoryDatabase){
     DBI::dbDisconnect(db)
 }
 
-
 hoursWorthOfSeconds <- 60^2
 daysWorthOfSeconds <- hoursWorthOfSeconds * 24
-
 # Kicks off getting all open markets daily
 repeat{
     queryTimeBeginHourly <- Sys.time()
