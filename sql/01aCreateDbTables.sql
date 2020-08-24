@@ -23,6 +23,10 @@ CREATE TABLE IF NOT EXISTS querySource (
   shortName TEXT,
   status TEXT
 );
+CREATE TABLE IF NOT EXISTS status (
+  statusId INTEGER PRIMARY KEY,
+  name TEXT
+);
 CREATE TABLE IF NOT EXISTS marketNotExist (
   marketId INTEGER,
   querySourceId INTEGER,
@@ -42,9 +46,9 @@ CREATE TABLE IF NOT EXISTS marketObservation (
   dateTimeStamp DATETIME,
   dateEnd DATETIME,
   contractId INTEGER,
-  contractStatus TEXT,
+  contractStatusId TEXT,
   marketId INTEGER,
-  marketStatus TEXT,
+  marketStatusId INTEGER,
   lastTradePrice DOUBLE,
   bestBuyYesCost DOUBLE,
   bestBuyNoCost DOUBLE,
@@ -53,8 +57,10 @@ CREATE TABLE IF NOT EXISTS marketObservation (
   lastClosePrice DOUBLE,
   displayOrder INTEGER,
   querySourceId INTEGER,
-  PRIMARY KEY (dateTimeStamp, contractId, querySourceId),
+  PRIMARY KEY (dateTimeStamp, contractId, querySourceId, marketStatusId,contractStatusId),
 FOREIGN KEY (contractId) REFERENCES contract (contractId)
+FOREIGN KEY (marketStatusId) REFERENCES status (statusId)
+FOREIGN KEY (contractStatusId) REFERENCES status (statusId)
 FOREIGN KEY (marketId) REFERENCES market (marketId)
 FOREIGN KEY (querySourceId) REFERENCES querySource (querySourceId)
 );

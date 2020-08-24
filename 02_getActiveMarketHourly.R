@@ -2,7 +2,6 @@
 if(!require(pacman)){install.packages(pacman)}
 pacman::p_load(rpredictit, DBI, RSQLite, png, dplyr, curl, rstudioapi, lubridate)
 
-
 configUseInMemoryDatabase <- FALSE
 # if configUseInMemoryDatabase is TRUE, then the sqlite database will be
 
@@ -93,110 +92,6 @@ sleepLessProcessTime <-function(time.begin = NULL, time.end = NULL){
         if(abs(as.double(difftime(time.begin, time.end, tz, units ="secs")))<delaySeconds){
             Sys.sleep(delaySeconds-abs(as.double(difftime(time.begin, time.end, tz, units ="secs"))))
         }
-    }
-}
-
-requestMarketopenValue <- function(openMarkets,db){
-    # rather than using a lapply here a for loop is used in this process as we NEVER plan on parallizing
-    for (market.id in seq_along(openMarkets)){
-        queryTimeBegin <- Sys.time()
-        message("getting market: ",openMarkets[market.id])
-        get.url <- paste0(
-            "https://www.predictit.org/api/marketdata/markets/",
-            openMarkets[market.id]
-        )
-        http.response <- httr::GET(get.url)
-        delayDurringSiteMaintanence(http.response, get.url)
-        if(siteReturnedNothing(http.response)){
-            message("Warning: market ID ",openMarkets[market.id]," returned no content")
-            error.checking <- try(
-                results <- RSQLite::dbSendQuery(
-                    conn=db,
-                    paste0(
-                        "INSERT INTO marketNotExist (marketId,querySourceId) ",
-                        "VALUES (", openMarkets[market.id], ",",1,");"
-                    )
-                )
-            )
-            dbClearResult(results)
-        } else{
-            this.market <- rpredictit::single_market(openMarkets[market.id])
-            this.market[["querySource"]] <- rep(1,length(unlist(this.market[1])))
-            message("attempting to query id:",openMarkets[market.id])
-
-            # [TODO] Query here to make new marketId in table market, if row doesn't exist yet
-            market.observations <- this.market %>%
-                dplyr::rename(
-                    dateTimeStamp = timeStamp,
-                    contractId = contract_id,
-                    contractStatus = contract_status,
-                    marketId = id,
-                    marketStatus = status,
-                    querySourceId = querySource
-                ) %>%
-                dplyr::select(
-                    dateTimeStamp,
-                    dateEnd,
-                    contractId,
-                    contractStatus,
-                    marketId,
-                    marketStatus,
-                    lastTradePrice,
-                    bestBuyYesCost,
-                    bestBuyNoCost,
-                    bestSellYesCost,
-                    bestSellNoCost,
-                    lastClosePrice,
-                    displayOrder,
-                    querySourceId
-                ) %>%
-                dplyr::mutate(dateEnd = lubridate::ymd_hms(dateEnd))
-        }
-        error.appendMarketObservation <- try(
-            result <- DBI::dbAppendTable(conn=db,"marketObservation",market.observations)
-        )
-        contracts <- this.market %>%
-            dplyr::rename(
-                contractId = contract_id,
-                imageUrl = contract_image,
-                marketId = id,
-                contractName = contract_name,
-                contractShortName = contract_shortName
-            ) %>%
-            dplyr::select(
-                contractId ,
-                imageUrl ,
-                marketId ,
-                contractName,
-                contractShortName,
-                dateEnd
-            ) %>%
-            dplyr::mutate(dateEnd = lubridate::ymd_hms(dateEnd))
-
-        error.appendContract <- try(
-            result <- DBI::dbAppendTable(conn=db,"contract",contracts)
-        )
-        markets <- this.market %>%
-            dplyr::rename(
-                marketId = id,
-                imageUrl = image
-            ) %>%
-            dplyr::select(
-                marketId ,
-                name ,
-                shortName ,
-                url,
-                imageUrl ,
-                dateEnd
-            ) %>%
-            dplyr::mutate(dateEnd = lubridate::ymd_hms(dateEnd)) %>%
-            unique()
-        error.appendMarket <- try(
-            result <- DBI::dbAppendTable(conn=db,"market",markets)
-        )
-        query.time.end <- Sys.time()
-        # we just made a call so wait our delay period
-        sleepLessProcessTime(query.time.end, queryTimeBegin)
     }
 }
 
@@ -310,8 +205,6 @@ appendChartData <- function(db,id,timeFrame){
 }
 
 getChartDataValue <- function(openMarkets,db){
-    # rather than using a lapply here a for loop is used in this process as we
-    # NEVER plan on parallelizing
     for (market.id in seq_along(openMarkets)){
         queryTimeBegin <- Sys.time()
         message("getting market chart data: ",openMarkets[market.id])
@@ -321,7 +214,8 @@ getChartDataValue <- function(openMarkets,db){
         appendChartData(db,openMarkets[market.id],"90d")
         query.time.end <- Sys.time()
         # we just made a call so wait our delay period
-        sleepLessProcessTime(query.time.end, queryTimeBegin)
+        # no delay is known to be needed for these calls
+        # sleepLessProcessTime(query.time.end, queryTimeBegin)
     }
 }
 
@@ -373,13 +267,15 @@ openDbConn <- function(databaseFileName,fUseInMemoryDatabase){
 
 #function with pipes
 executeSqlFromFile <- function(sqlFile,db){
-    queryReturn <-  sqlFile %>%
-        readLines(warn=FALSE) %>%
-        paste(collapse=" ") %>%
-        strsplit(";") %>%
-        unlist() %>%
-        lapply(FUN=.dbSendQueryClear,db) %>%
-        try(silent=TRUE)
+    tryExecuteSQlFromFile <- try(
+        queryReturn <-  sqlFile %>%
+            readLines(warn=FALSE) %>%
+            paste(collapse=" ") %>%
+            strsplit(";") %>%
+            unlist() %>%
+            lapply(FUN=.dbSendQueryClear,db),
+    silent=TRUE)
+    return(queryReturn)
 }
 
 # Same function without pipes
@@ -407,45 +303,8 @@ exmpleFunctionWithouthPipes_executeSqlFromFile <- function(sqlFile,db){
     )
 }
 
-
-getOpenMarkets <- function(databaseFileName,configUseInMemoryDatabase){
-    # usage:
-    # getOpenMarkets(file.path(projectDirectory,"data","openMarkets.sqlite"), configUseInMemoryDatabase)
-    # all markets are updated every delaySeconds seconds...
-    # so for a history we would need to capture a new timestamp's worth of data every minute...
-    # If I was to do this then I need to normalize the data into a table RSQLlight?
-    # may need for streaming annalysis?
-    # pacman::p_load(stream)
-
-    #Get Closed Makets, so we can ignore them
-    dbClosed <- openDbConn(file.path(projectDirectory,"data","closed.sqlite"),FALSE)
-    existing.tables.closed <- DBI::dbListTables(dbClosed)
-    existingClosedMarkets <- .dbSendQueryFetch(
-        "
-                SELECT DISTINCT id
-                FROM market_observations
-                WHERE Status LIKE 'Closed'
-            ",
-        dbClosed
-    )
-    # Clean up open database connections
-    DBI::dbDisconnect(dbClosed)
+buildDbTablesIfNeeded <- function(databaseFileName,configUseInMemoryDatabase){
     db <- openDbConn(databaseFileName, configUseInMemoryDatabase)
-    # Don't forget to clean up open database connections with:
-    # DBI::dbDisconnect(db)
-    existing.tables <- DBI::dbListTables(db)
-    all.market.data.now <- rpredictit::all_markets()
-    #get all markets: (starting at 1100)
-    openMarkets <- 1200 %>%
-        seq(
-            all.market.data.now$id %>%
-            max()
-        ) %>%
-        dplyr::setdiff(all.market.data.now$id)
-
-    # remove closed markets
-    openMarkets <- dplyr::setdiff(openMarkets,existingClosedMarkets$id)
-
     # openMarkets <- all.market.data.now
     # Create database and all planned tables if no tables exist,
     # setup foregin keys with: https://www.techonthenet.com/sqlite/foreign_keys/foreign_keys.php
@@ -463,16 +322,53 @@ getOpenMarkets <- function(databaseFileName,configUseInMemoryDatabase){
     attemptIndex <- file.path(projectDirectory,"sql","01bCreateDbIndexes.sql") %>%
         executeSqlFromFile(db)
 
-        # Create indexes
+    # Create indexes
     #Insert lookup_querySource rows we expect an error here if the querySourceId allready exists, so we ignore it
-    errFillLookupQuerySource <- try(
-        executeSqlFromFile(
-            file.path(projectDirectory,"sql","01cInsert-querySource-DefaultValues.sql"),
-            db
-        )
+    querySource <- .dbSendQueryFetch(
+        "SELECT querySourceid
+        FROM querySource
+        ",
+        db
     )
-    #errFillLookupQuerySource
+    length(querySource$id)
+    if (!length(querySource[,1]) == 11){
+        errFillLookupQuerySource <- try(
+            executeSqlFromFile(
+                file.path(projectDirectory,"sql","01cInsert-querySource-DefaultValues.sql"),
+                db
+            )
+        )
+    }
 
+    #errFillLookupQuerySource
+    # Clean up open database connections
+    DBI::dbDisconnect(db)
+}
+
+getOpenMarkets <- function(databaseFileName,configUseInMemoryDatabase){
+    # usage:
+    # getOpenMarkets(file.path(projectDirectory,"data","openMarkets.sqlite"), configUseInMemoryDatabase)
+    # all markets are updated every delaySeconds seconds...
+    # so for a history we would need to capture a new timestamp's worth of data every minute...
+    # If I was to do this then I need to normalize the data into a table RSQLlight?
+    # may need for streaming annalysis?
+    # pacman::p_load(stream)
+    # Get Closed Makets, so we can ignore them
+    dbClosed <- openDbConn(file.path(projectDirectory,"data","closed.sqlite"),FALSE)
+    existing.tables.closed <- DBI::dbListTables(dbClosed)
+    existingClosedMarkets <- .dbSendQueryFetch(
+        "
+                SELECT DISTINCT id
+                FROM market_observations
+                WHERE Status LIKE 'Closed'
+            ",
+        dbClosed
+    )
+
+    # Clean up open database connections
+    DBI::dbDisconnect(dbClosed)
+
+    db <- openDbConn(databaseFileName, configUseInMemoryDatabase)
     existingopenData <- .dbSendQueryFetch(
         "
         SELECT DISTINCT marketId
@@ -497,20 +393,34 @@ getOpenMarkets <- function(databaseFileName,configUseInMemoryDatabase){
         ",
         db
     )
-    # get all open markets that we don't yet have and that we tried, but returned NULL contents
-    openMarketsMissingData <- base::setdiff(openMarkets,union(unlist(existingopenData),unlist(nullMarketId)))
-    openMarketsMissingChartData <- base::setdiff(openMarkets,union(unlist(existingChartData),unlist(nullMarketId)))
+    # Don't forget to clean up open database connections with:
+    # DBI::dbDisconnect(db)
+    existing.tables <- DBI::dbListTables(db)
+    all.market.data.now <- rpredictit::all_markets()
+    #get all markets: (starting at 1100)
+    openMarkets <- 1200 %>%
+        seq(
+            all.market.data.now$id %>%
+                max()
+        )
 
-    if(length(openMarketsMissingData)==0){
-        message("No newly open markets exist")
-    } else {
-        requestMarketopenValue(openMarketsMissingData, db)
-    }
+    # remove closed markets
+    openMarkets <- dplyr::setdiff(openMarkets,existingClosedMarkets$id)
+
+    # remove null markets
+    openMarkets <- dplyr::setdiff(openMarkets,nullMarketId$marketId)
+
+    # get all open markets that we don't yet have and that we tried, but returned NULL contents
+    openMarketsMissingData <- dplyr::setdiff(openMarkets,union(unlist(existingopenData),unlist(nullMarketId)))
+    openMarketsMissingChartData <- dplyr::setdiff(openMarkets,union(unlist(existingChartData),unlist(nullMarketId)))
+
     if(length(openMarketsMissingChartData)==0){
         message("No newly open markets exist")
     } else {
         getChartDataValue(openMarketsMissingChartData,db)
     }
+
+
 
     if(configUseInMemoryDatabase == TRUE){
         # save our in memory database to file
@@ -537,16 +447,14 @@ daysWorthOfSeconds <- hoursWorthOfSeconds * 24
 repeat{
     queryTimeBeginHourly <- Sys.time()
     # Repeat forever, getting the new content
-    #getOpenMarkets(file.path(projectDirectory,"data","data.sqlite"), configUseInMemoryDatabase)
+    buildDbTablesIfNeeded(file.path(projectDirectory,"data","openMarkets.sqlite"), configUseInMemoryDatabase)
     getOpenMarkets(file.path(projectDirectory,"data","openMarkets.sqlite"), configUseInMemoryDatabase)
     queryTimeEndHourly <- Sys.time()
+    executionTime <- as.double(difftime(queryTimeEndHourly,queryTimeBeginHourly, tz,units ="secs"))
+    ## Delay one hour between each calls start time.
+    message("search complete, waiting a hour. Will resume at:" , lubridate::now()+exectutionTime)
 
-    ## Delay one day between each call
-    ## Note: Should probably schedule this script to run daily with the user's OS scheduling solution,
-    ## but currently the first run could take roughtly 4 days to finish
-    message("search complete, waiting a hour. Will resume at:")
-
-    if(as.double(difftime(queryTimeEndHourly,queryTimeBeginHourly, tz,units ="secs"))<hoursWorthOfSeconds){
-        Sys.sleep(hoursWorthOfSeconds-as.double(difftime( queryTimeEndHourly,queryTimeBeginHourly, tz,units ="secs")))
+    if(exectutionTime < hoursWorthOfSeconds){
+        Sys.sleep(hoursWorthOfSeconds-executionTime)
     }
 }
