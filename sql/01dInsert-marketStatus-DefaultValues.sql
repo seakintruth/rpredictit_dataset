@@ -1,3 +1,3 @@
-INSERT INTO marketStatus (marketStatusId,name) VALUES
+INSERT INTO status (statusId,name) VALUES
 (0,'Closed'),
 (1,'Open');

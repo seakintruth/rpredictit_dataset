@@ -57,11 +57,8 @@ CREATE TABLE IF NOT EXISTS marketObservation (
   lastClosePrice DOUBLE,
   displayOrder INTEGER,
   querySourceId INTEGER,
-  PRIMARY KEY (dateTimeStamp, contractId, querySourceId, marketStatusId,contractStatusId),
-FOREIGN KEY (contractId) REFERENCES contract (contractId)
 FOREIGN KEY (marketStatusId) REFERENCES status (statusId)
 FOREIGN KEY (contractStatusId) REFERENCES status (statusId)
-FOREIGN KEY (marketId) REFERENCES market (marketId)
 FOREIGN KEY (querySourceId) REFERENCES querySource (querySourceId)
 );
 CREATE TABLE IF NOT EXISTS marketChartData (

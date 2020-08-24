@@ -49,7 +49,16 @@ scriptFileName <- function() {
     file.choose() %>% return()
   })
 }
-projectDirectory <- dirname(scriptFileName())
+if (stringr::str_length(scriptFileName()) >0 ) {
+  projectDirectory <- dirname(scriptFileName())
+} else {
+  if (Sys.info()$sysName == "Windows") {
+    projectDirectory <- file.path("p:","data","r","predictit_dataset","rpredictit_dataset",fsep="\\")
+  } else {
+    projectDirectory <- file.path("/mnt","p","data","r","predictit_dataset","rpredictit_dataset")
+  }
+  message("Warning: Unable to find relative path of script, project path set to:",projectDirectory)
+}
 # A usefull sqlite tutorial:
 # https://www.sqlitetutorial.net
 
@@ -189,7 +198,6 @@ exmpleFunctionWithouthPipes_executeSqlFromFile <- function(sqlFile,db){
 
 buildDbTablesIfNeeded <- function(databaseFileName,configUseInMemoryDatabase){
   db <- openDbConn(databaseFileName, configUseInMemoryDatabase)
-  # openMarkets <- all.market.data.open
   # Create database and all planned tables if no tables exist,
   # setup foregin keys with: https://www.techonthenet.com/sqlite/foreign_keys/foreign_keys.php
   # on refactor we could create tables one at a time if that particular table is missing by checking:
@@ -199,10 +207,15 @@ buildDbTablesIfNeeded <- function(databaseFileName,configUseInMemoryDatabase){
   # These sql queries are built to only execute if a table or index is missing
 
   # Create Tables
+  # [TODO] marketObservation should include these:
+  # FOREIGN KEY (contractId) REFERENCES contract (contractId)
+  # FOREIGN KEY (marketId) REFERENCES market (marketId)
+
   attemptCreate <- file.path(projectDirectory,"sql","01aCreateDbTables.sql") %>%
     executeSqlFromFile(db)
 
   # Create indexes
+  #[TODO] add CREATE UNIQUE INDEX IF NOT EXISTS `contract_id_index` ON `marketObservation` (`contractId`	ASC);
   attemptIndex <- file.path(projectDirectory,"sql","01bCreateDbIndexes.sql") %>%
     executeSqlFromFile(db)
 
@@ -260,7 +273,7 @@ getOpenMarkets <- function(databaseFileName,configUseInMemoryDatabase){
     marketObservation <- marketObservation %>%
       mutate(dateEnd=lubridate::ymd_hms(dateEnd)) %>%
       mutate(timeStamp=lubridate::ymd_hms(timeStamp)) %>%
-      mutate(marketsStatusId=dplyr::case_when(
+      mutate(marketStatusId=dplyr::case_when(
         marketObservation$status == "Open" ~ 1,
         marketObservation$status == "Closed" ~ 0)
       ) %>%
@@ -274,7 +287,7 @@ getOpenMarkets <- function(databaseFileName,configUseInMemoryDatabase){
         contractId=contract_id,
         contractStatusId=contractStatusId,
         marketId=id,
-        marketsStatusId=marketsStatusId,
+        marketStatusId=marketStatusId,
         lastTradePrice=lastTradePrice,
         bestBuyYesCost=bestBuyYesCost,
         bestBuyNoCost=bestBuyNoCost,
@@ -290,7 +303,7 @@ getOpenMarkets <- function(databaseFileName,configUseInMemoryDatabase){
         contractId,
         contractStatusId,
         marketId,
-        marketsStatusId,
+        marketStatusId,
         lastTradePrice,
         bestBuyYesCost,
         bestBuyNoCost,
@@ -317,9 +330,9 @@ repeat{
   getOpenMarkets(file.path(projectDirectory,"data","openMarkets.sqlite"), configUseInMemoryDatabase)
   executionTime <- as.double(difftime(Sys.time(),queryStartTime, tz,units ="secs"))
   ## Delay one hour between each calls start time.
-  message("search complete, waiting until next allowed call. Will resume at:" , lubridate::now()+exectutionTime)
+  message("search complete, waiting until next allowed call. Will resume at:" , lubridate::now()+executionTime)
 
-  if(exectutionTime < delaySecondsBetweenCalls){
+  if(executionTime < delaySecondsBetweenCalls){
     Sys.sleep(delaySecondsBetweenCalls-executionTime)
   }
 }
