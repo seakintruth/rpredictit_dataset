@@ -256,13 +256,13 @@ buildDbTablesIfNeeded <- function(databaseFileName,configUseInMemoryDatabase){
 }
 
 getOpenMarkets <- function(databaseFileName,configUseInMemoryDatabase){
-  db <- openDbConn(databaseFileName, configUseInMemoryDatabase)
   all.market.data.open <- rpredictit::all_markets()
   fSaveAsNull <- FALSE
   # check for a site down error
   if(is.na(all.market.data.open)){
     delayDurringSiteMaintanence("https://www.predictit.org/api/marketdata/all/")
   } else {
+    db <- openDbConn(databaseFileName, configUseInMemoryDatabase)
     # querySourceVal
     marketObservation <- all.market.data.open
 
@@ -313,12 +313,13 @@ getOpenMarkets <- function(databaseFileName,configUseInMemoryDatabase){
         displayOrder,
         querySourceId
       )
-
     error.checking <- try(
       results <- DBI::dbAppendTable(conn=db,
         "marketObservation",marketObservation
       )
     )
+    # Clean up open database connections
+    DBI::dbDisconnect(db)
   }
 }
 
